@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import ssl
 import time
 import urllib.error
@@ -132,6 +133,10 @@ class GigaChatClient(BaseLLMClient):
                 f"Не удалось подключиться к OAuth GigaChat ({exc.reason}). "
                 "При ошибке сертификата установите сертификат Минцифры или укажите GIGACHAT_CA_BUNDLE."
             ) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise LLMClientError(
+                f"Превышено время ожидания OAuth GigaChat ({self._timeout} с)."
+            ) from exc
 
         token = data.get("access_token")
         if not token:
@@ -174,6 +179,10 @@ class GigaChatClient(BaseLLMClient):
             raise LLMClientError(f"GigaChat API вернул HTTP {exc.code}.") from exc
         except urllib.error.URLError as exc:
             raise LLMClientError(f"Сетевая ошибка GigaChat API: {exc.reason}") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise LLMClientError(
+                f"Превышено время ожидания ответа GigaChat API ({self._timeout} с)."
+            ) from exc
 
         try:
             content = body["choices"][0]["message"]["content"]
@@ -193,7 +202,7 @@ class OllamaClient(BaseLLMClient):
         self,
         base_url: str = "http://127.0.0.1:11434",
         model: str = "qwen2.5:7b",
-        timeout: int = 45,
+        timeout: int = 180,
     ) -> None:
         self.provider_name = "ollama"
         self.model_name = model
@@ -207,6 +216,7 @@ class OllamaClient(BaseLLMClient):
                 "model": self.model_name,
                 "format": "json",
                 "stream": False,
+                "keep_alive": "10m",
                 "options": {"temperature": temperature},
                 "messages": [
                     {"role": "system", "content": system_prompt},
@@ -231,6 +241,11 @@ class OllamaClient(BaseLLMClient):
         except urllib.error.URLError as exc:
             raise LLMClientError(
                 f"Локальный сервер Ollama недоступен по адресу {self._base_url} ({exc.reason})."
+            ) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise LLMClientError(
+                f"Превышено время ожидания ответа Ollama ({self._timeout} с). "
+                "При первом запуске модель может долго загружаться в память — повторите запрос или выберите более лёгкую модель (например, qwen2.5:3b)."
             ) from exc
 
         message = body.get("message") if isinstance(body, dict) else None
@@ -258,6 +273,6 @@ def create_llm_client(config: AppConfig, provider_override: str | None = None) -
         return OllamaClient(
             base_url=config.ollama_base_url,
             model=config.ollama_model,
-            timeout=max(30, config.http_timeout_seconds),
+            timeout=max(180, config.http_timeout_seconds),
         )
     raise LLMClientError(f"Неизвестный ИИ-провайдер: {provider}")

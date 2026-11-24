@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from typing import Any
 
@@ -89,7 +90,10 @@ OFFICE_MANDATORY_RE = re.compile(
 def _clean_str(value: Any) -> str:
     if value is None:
         return ""
-    return re.sub(r"\s+", " ", str(value)).strip()
+    text = html.unescape(str(value))
+    if "<" in text and ">" in text:
+        text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _to_int_or_none(value: Any) -> int | None:

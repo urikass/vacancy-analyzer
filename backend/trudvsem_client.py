@@ -83,7 +83,7 @@ def load_vacancies_from_file(file_path: str | Path) -> list[dict[str, Any]]:
     path = Path(file_path)
     if not path.is_file():
         raise FileNotFoundError(f"Файл с вакансиями не найден: {path}")
-    raw_text = path.read_text(encoding="utf-8")
+    raw_text = path.read_text(encoding="utf-8-sig")
     payload = json.loads(raw_text)
     return extract_vacancies_from_payload(payload)
 

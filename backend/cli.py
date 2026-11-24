@@ -116,7 +116,7 @@ def _cmd_resume(args: argparse.Namespace, config: AppConfig) -> int:
         )
         if vacancy is None:
             raise ValueError(f"Вакансия {args.vacancy_id} не найдена в {args.input}.")
-        resumes_payload = json.loads(Path(args.resume).read_text(encoding="utf-8"))
+        resumes_payload = json.loads(Path(args.resume).read_text(encoding="utf-8-sig"))
         candidates = resumes_payload.get("candidates") if isinstance(resumes_payload, dict) else resumes_payload
         if not isinstance(candidates, list) or not candidates:
             raise ValueError("Файл резюме не содержит кандидатов.")

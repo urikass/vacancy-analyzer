@@ -137,6 +137,8 @@ class GigaChatClient(BaseLLMClient):
             raise LLMClientError(
                 f"Превышено время ожидания OAuth GigaChat ({self._timeout} с)."
             ) from exc
+        except json.JSONDecodeError as exc:
+            raise LLMClientError("GigaChat OAuth вернул некорректный JSON.") from exc
 
         token = data.get("access_token")
         if not token:
@@ -183,6 +185,8 @@ class GigaChatClient(BaseLLMClient):
             raise LLMClientError(
                 f"Превышено время ожидания ответа GigaChat API ({self._timeout} с)."
             ) from exc
+        except json.JSONDecodeError as exc:
+            raise LLMClientError("GigaChat API вернул некорректный JSON.") from exc
 
         try:
             content = body["choices"][0]["message"]["content"]
@@ -247,6 +251,8 @@ class OllamaClient(BaseLLMClient):
                 f"Превышено время ожидания ответа Ollama ({self._timeout} с). "
                 "При первом запуске модель может долго загружаться в память — повторите запрос или выберите более лёгкую модель (например, qwen2.5:3b)."
             ) from exc
+        except json.JSONDecodeError as exc:
+            raise LLMClientError("Ollama вернула некорректный JSON.") from exc
 
         message = body.get("message") if isinstance(body, dict) else None
         content = message.get("content") if isinstance(message, dict) else None

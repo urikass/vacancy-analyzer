@@ -118,7 +118,7 @@ export function ReportView({
     if (!file) return;
     setUploadError(null);
     try {
-      const text = await file.text();
+      const text = (await file.text()).replace(/^\uFEFF/, '');
       const parsed = JSON.parse(text);
       await onUploadJson(parsed, file.name);
     } catch (err) {
@@ -482,10 +482,13 @@ export function ReportView({
                   <div className="sm:col-span-2">
                     <span className="text-slate-500">Адрес: </span>
                     <span className="font-semibold text-slate-900">
-                      {selectedRaw.addresses?.address
-                        ?.map((a) => a.location)
-                        .filter(Boolean)
-                        .join('; ') || 'Не указан'}
+                      {(Array.isArray(selectedRaw.addresses?.address)
+                        ? selectedRaw.addresses.address
+                            .map((a) => (typeof a === 'string' ? a : a?.location))
+                            .filter(Boolean)
+                            .join('; ')
+                        : (selectedRaw.addresses?.address as { location?: string } | undefined)
+                            ?.location) || 'Не указан'}
                     </span>
                   </div>
                 </div>

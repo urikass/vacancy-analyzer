@@ -57,6 +57,8 @@ def extract_vacancies_from_payload(payload: Any) -> list[dict[str, Any]]:
         results = payload.get("results")
         if isinstance(results, dict) and isinstance(results.get("vacancies"), list):
             items = results["vacancies"]
+        elif isinstance(results, dict) and not results:
+            items = []
         elif isinstance(payload.get("vacancies"), list):
             items = payload["vacancies"]
         elif "vacancy" in payload and isinstance(payload["vacancy"], dict):
@@ -150,7 +152,10 @@ def fetch_vacancies_paginated(
         payload = getter(page_url, timeout)
         pages_fetched += 1
 
-        page_items = extract_vacancies_from_payload(payload)
+        try:
+            page_items = extract_vacancies_from_payload(payload)
+        except ValueError as exc:
+            raise TrudvsemAPIError(f"Неожиданный формат ответа API: {exc}") from exc
         if not page_items:
             break
 

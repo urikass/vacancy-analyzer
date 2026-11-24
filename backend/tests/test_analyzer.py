@@ -165,6 +165,43 @@ class VacancyAnalyzerTests(unittest.TestCase):
         # Утверждения о нарушении ТК РФ должны быть отфильтрованы
         self.assertFalse(any("тк рф" in i.problem.lower() for i in by_id["DEMO-39-002"].issues))
 
+    def test_ai_hallucinated_quote_and_false_omission_are_filtered(self) -> None:
+        """Проверяет отсечение выдуманных ИИ цитат и ложных пропусков по заполненным полям."""
+        vacancies = load_vacancies_from_file(DEMO_JSON_PATH)[:1]  # DEMO-39-001 (чистая)
+        stub = StubLLMClient(
+            response_map={
+                "DEMO-39-001": {
+                    "issues": [
+                        {
+                            "topic": "обязанности",
+                            "issue_type": "ambiguity",
+                            "source_field": "duty",
+                            "quote": "различные поручения",
+                            "problem": "Фраза «различные поручения» слишком общая.",
+                            "recommendation": "Уточните обязанности.",
+                        },
+                        {
+                            "topic": "требования",
+                            "issue_type": "omission",
+                            "source_field": "education",
+                            "quote": "",
+                            "problem": "Нет требований.",
+                            "recommendation": "Добавьте требования.",
+                        },
+                    ]
+                }
+            }
+        )
+        report = analyze_vacancies(
+            raw_vacancies=vacancies,
+            config=AppConfig(llm_provider="ollama"),
+            mode="verification",
+            source="test-hallucination",
+            llm_client=stub,
+        )
+        self.assertTrue(report.ai_applied)
+        self.assertEqual(report.vacancies[0].issues, [])
+
     def test_pagination_fetches_at_least_two_pages(self) -> None:
         """Проверяет постраничную загрузку (минимум 2 страницы при достаточном лимите)."""
         all_vacancies = load_vacancies_from_file(DEMO_JSON_PATH)

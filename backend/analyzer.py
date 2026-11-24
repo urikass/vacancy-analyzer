@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,10 +35,10 @@ AI_SYSTEM_PROMPT = """Ты — редактор-аналитик ваканси�
 2. Учитывай И текст описания, И структурированные поля API. Если структурированное поле уже содержит конкретные данные, отсутствие их повторения в тексте НЕ является проблемой.
 3. Отмечай только реальные проблемы трёх типов:
    - "omission" (пропуск): поле пустое или равно 0; цитату ("quote") оставь пустой строкой "".
-   - "ambiguity" (неоднозначность): расплывчатые формулировки (например, «гибкий график» без дней/смен, «различные поручения», «условия на собеседовании»).
-   - "contradiction" (противоречие): разные поля противоречат друг другу; в "quote" приведи ОБА исходных значения.
-4. НЕ выдумывай факты и НЕ делай выводов о нарушении закона (ТК РФ и т.д.).
-5. НЕ придирайся к мелочам: если в вакансии уже указаны конкретная должность, понятные обязанности, вилка/оклад, конкретный график (например, «пн–пт, 09:00–18:00» или «2/2, 08:00–20:00») и адрес с улицей — НЕ выдумывай искусственные замечания. Если «образование» указано как «Не указано», но требования по навыкам понятны, само по себе это не критический пропуск.
+   - "ambiguity" (неоднозначность): расплывчатые формулировки без конкретики (например, не указаны смены/часы или условия отложены до собеседования); в "quote" укажи ТОЧНУЮ цитату из JSON текущей вакансии.
+   - "contradiction" (противоречие): разные поля противоречат друг другу; в "quote" приведи ОБА исходных значения из JSON текущей вакансии.
+4. НЕ выдумывай факты, НЕ цитируй фразы, которых нет в JSON текущей вакансии, и НЕ делай выводов о нарушении закона (ТК РФ и т.д.).
+5. НЕ придирайся к мелочам: если в вакансии уже указаны конкретная должность, понятные обязанности, вилка/оклад, конкретный график (например, «пн–пт, 09:00–18:00» или «2/2, 08:00–20:00») и адрес с улицей — НЕ выдумывай искусственные замечания. Если «образование» указано как «Не указано», но требования по навыкам понятны, это НЕ пропуск.
 6. Если вакансия описана ясно и без противоречий (особенно если базовые правила вернули пустой список и скрытых противоречий нет), верни пустой массив "issues": [].
 7. Учитывай уже найденные правилами замечания — дополни их, только если заметишь реально упущенную неоднозначность, пропуск или противоречие, мешающие соискателю понять условия.
 
@@ -85,11 +86,72 @@ def _build_ai_user_prompt(vacancy: VacancySummary, rule_issues: list[Issue]) -> 
     )
 
 
-def _sanitize_ai_issues(payload: dict[str, Any]) -> list[Issue]:
+_FIELD_LABEL_TOKENS = {
+    "job", "name", "duty", "requirements", "requirement", "qualification",
+    "education", "experience", "schedule", "employment", "salary", "min",
+    "max", "currency", "addresses", "address", "location", "rub",
+}
+
+
+def _vacancy_haystack(vacancy: VacancySummary) -> str:
+    parts = [
+        vacancy.job_name,
+        vacancy.company_name,
+        vacancy.duty,
+        vacancy.requirements,
+        vacancy.qualification,
+        vacancy.education,
+        vacancy.schedule,
+        vacancy.employment,
+        " ".join(vacancy.addresses),
+        str(vacancy.salary_min or ""),
+        str(vacancy.salary_max or ""),
+        str(vacancy.experience if vacancy.experience is not None else ""),
+    ]
+    return " ".join(parts).lower()
+
+
+def _is_quote_grounded(quote: str, haystack: str) -> bool:
+    """Проверяет, что цитата ИИ действительно опирается на текст текущей вакансии."""
+    q = quote.strip().lower()
+    if not q:
+        return False
+    if q in haystack:
+        return True
+    tokens = [
+        tok
+        for tok in re.findall(r"[а-яёa-z0-9]{3,}", q)
+        if tok not in _FIELD_LABEL_TOKENS
+    ]
+    if not tokens:
+        return False
+    matched = sum(1 for tok in tokens if tok in haystack)
+    return (matched / len(tokens)) >= 0.6
+
+
+def _is_false_omission(topic: str, vacancy: VacancySummary) -> bool:
+    """Отсекает ложные пропуски по уже заполненным структурированным полям."""
+    if topic == "название должности":
+        return bool(vacancy.job_name)
+    if topic == "обязанности":
+        return bool(vacancy.duty)
+    if topic == "оплата":
+        return (vacancy.salary_min or 0) > 0 or (vacancy.salary_max or 0) > 0
+    if topic == "график":
+        return bool(vacancy.schedule)
+    if topic == "тип занятости":
+        return bool(vacancy.employment)
+    if topic == "требования":
+        return bool(vacancy.requirements or vacancy.qualification or (vacancy.experience or 0) > 0)
+    return False
+
+
+def _sanitize_ai_issues(payload: dict[str, Any], vacancy: VacancySummary | None = None) -> list[Issue]:
     raw_issues = payload.get("issues")
     if not isinstance(raw_issues, list):
         return []
 
+    haystack = _vacancy_haystack(vacancy) if vacancy is not None else ""
     sanitized: list[Issue] = []
     for item in raw_issues:
         if not isinstance(item, dict):
@@ -111,6 +173,17 @@ def _sanitize_ai_issues(payload: dict[str, Any]) -> list[Issue]:
             continue
         if not problem or not recommendation:
             continue
+
+        # Страховка от галлюцинаций ИИ (вымышленные цитаты и ложные пропуски)
+        if vacancy is not None:
+            if issue_type == "omission" and _is_false_omission(topic, vacancy):
+                continue
+            if issue_type in ("ambiguity", "contradiction") and not _is_quote_grounded(quote, haystack):
+                continue
+            # Если в описании проблемы модель взяла в «кавычки» фразу, которой нет в вакансии — отсекаем
+            quoted_in_problem = re.findall(r"«([^»]{4,})»", problem)
+            if any(not _is_quote_grounded(phrase, haystack) for phrase in quoted_in_problem):
+                continue
 
         sanitized.append(
             Issue(
@@ -211,7 +284,7 @@ def analyze_vacancies(
                     user_prompt=_build_ai_user_prompt(vacancy, rule_issues),
                     temperature=0.1,
                 )
-                ai_issues = _sanitize_ai_issues(ai_response)
+                ai_issues = _sanitize_ai_issues(ai_response, vacancy=vacancy)
                 ai_successes += 1
             except LLMClientError as exc:
                 ai_failures += 1

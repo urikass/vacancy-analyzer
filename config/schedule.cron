@@ -1,0 +1,3 @@
+# Пример настройки расписания для Linux / macOS (crontab -e)
+# Запускает рабочий режим каждый час и сохраняет отчёт в output/latest_report.json
+0 * * * * cd /path/to/transparent-vacancy && python3 -m backend.cli fetch --max-vacancies 40 --page-size 20 --output output/latest_report.json >> output/scheduler.log 2>&1

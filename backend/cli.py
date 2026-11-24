@@ -52,9 +52,10 @@ def _cmd_check(args: argparse.Namespace, config: AppConfig) -> int:
         print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
         return 0
 
+    output_path = args.output or "output/sample_report.json"
     report = run_verification_mode(
         input_path=args.input,
-        output_path=args.output,
+        output_path=output_path,
         config=config,
         provider_override=args.provider,
         strict_ai=args.strict_ai,
@@ -67,7 +68,7 @@ def _cmd_check(args: argparse.Namespace, config: AppConfig) -> int:
             f"с замечаниями: {report.vacancies_with_issues}, всего замечаний: {report.total_issues}."
         )
         print(f"[OK] ИИ: {report.ai_note}")
-        print(f"[OK] Отчёт сохранён в: {args.output}")
+        print(f"[OK] Отчёт сохранён в: {output_path}")
     return 0
 
 
@@ -132,14 +133,15 @@ def _cmd_resume(args: argparse.Namespace, config: AppConfig) -> int:
         provider_override=args.provider,
     )
     output_json = json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n"
-    if args.output:
-        out_path = Path(args.output)
+    output_path = args.output if args.stdin else (args.output or "output/resume_draft.json")
+    if output_path:
+        out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(output_json, encoding="utf-8")
-    if args.stdout or args.stdin or not args.output:
+    if args.stdout or args.stdin or not output_path:
         print(output_json)
     else:
-        print(f"[OK] Черновик резюме для «{result.vacancy_title}» сохранён в: {args.output}")
+        print(f"[OK] Черновик резюме для «{result.vacancy_title}» сохранён в: {output_path}")
     return 0
 
 
@@ -235,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 1. Проверочный режим
     p_check = sub.add_parser("check", help="Проверочный режим: анализ локального JSON без запросов к порталу.")
     p_check.add_argument("--input", "-i", default="sample_data/demo_vacancies.json", help="Путь к входному JSON.")
-    p_check.add_argument("--output", "-o", default="output/sample_report.json", help="Путь сохранения JSON-отчёта.")
+    p_check.add_argument("--output", "-o", default=None, help="Путь сохранения JSON-отчёта (по умолчанию output/sample_report.json).")
     p_check.add_argument("--provider", choices=["gigachat", "ollama", "rules"], default=None, help="Переопределить ИИ-провайдер.")
     p_check.add_argument("--strict-ai", action="store_true", help="Завершать с ошибкой, если ИИ недоступен.")
     p_check.add_argument("--stdin", action="store_true", help="Читать входной JSON из stdin и печатать отчёт в stdout.")
@@ -263,7 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_res.add_argument("--vacancy-id", default="DEMO-39-001", help="ID выбранной вакансии.")
     p_res.add_argument("--resume", default="sample_data/sample_resumes.json", help="JSON с резюме соискателей.")
     p_res.add_argument("--candidate-id", default="RESUME-001", help="ID профиля соискателя.")
-    p_res.add_argument("--output", "-o", default="output/resume_draft.json", help="Путь сохранения черновика.")
+    p_res.add_argument("--output", "-o", default=None, help="Путь сохранения черновика (по умолчанию output/resume_draft.json).")
     p_res.add_argument("--provider", choices=["gigachat", "ollama", "rules"], default=None, help="Переопределить ИИ-провайдер.")
     p_res.add_argument("--stdin", action="store_true", help="Читать {vacancy, candidate} из stdin.")
     p_res.add_argument("--stdout", action="store_true", help="Вывести результат JSON в stdout.")

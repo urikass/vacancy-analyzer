@@ -22,8 +22,8 @@ function runPythonCli(args: string[], stdinPayload?: string): Promise<{ code: nu
     let stderr = '';
     const timer = setTimeout(() => {
       proc.kill('SIGTERM');
-      reject(new Error('Превышено время ожидания выполнения Python-анализатора (45 с).'));
-    }, 45_000);
+      reject(new Error('Превышено время ожидания выполнения Python-анализатора (240 с).'));
+    }, 240_000);
 
     proc.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf-8');
